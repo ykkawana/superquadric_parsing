@@ -65,7 +65,6 @@ def get_install_requirements():
         "sympy",
         "matplotlib==2.2.4",
         "seaborn",
-        "mayavi"
     ]
 
 

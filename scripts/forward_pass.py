@@ -2,6 +2,19 @@
 """Script used to perform a forward pass using a previously trained model and
 visualize the corresponding primitives
 """
+from itertools import product
+from PIL import Image, ImageDraw
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+os.environ["PYOPENGL_PLATFORM"] = "egl"
+from pyrender.constants import RenderFlags
+import pyrender
+import trimesh
+import skimage.io
+import pickle
 import argparse
 import os
 import sys
@@ -15,7 +28,7 @@ from arguments import add_voxelizer_parameters, add_nn_parameters, \
      voxelizer_shape, add_loss_options_parameters, add_loss_parameters
 from utils import get_colors, store_primitive_parameters
 from visualization_utils import points_on_sq_surface, points_on_cuboid, \
-    save_prediction_as_ply
+    save_prediction_as_ply, get_primitive_trimesh
 
 from learnable_primitives.common.dataset import get_dataset_type,\
     compose_transformations
@@ -28,7 +41,8 @@ from learnable_primitives.primitives import\
     euler_angles_to_rotation_matrices, quaternions_to_rotation_matrices
 from learnable_primitives.voxelizers import VoxelizerFactory
 
-from mayavi import mlab
+
+#from mayavi import mlab
 
 
 def get_shape_configuration(use_cuboids):
@@ -36,6 +50,59 @@ def get_shape_configuration(use_cuboids):
         return points_on_cuboid
     else:
         return points_on_sq_surface
+
+def resize(ratio):
+    return np.array([
+        [ratio, 0,   0,   0],
+        [0,  ratio, 0.0, 0],
+        [0,  0,   ratio,   0],
+        [0.0,  0.0, 0.0, 1],
+    ])
+
+
+def translate(x=0, y=0, z=0):
+    return np.array([
+        [1, 0, 0, x],
+        [0, 1, 0, y],
+        [0, 0, 1, z],
+        [0, 0, 0, 1],
+    ])
+
+
+def rotate(x=0, y=0, z=0):
+    xrd = x/180*np.pi
+    yrd = y/180*np.pi
+    zrd = z/180*np.pi
+
+    xr = np.array([
+        [1, 0, 0, 0],
+        [0, np.cos(xrd), -np.sin(xrd), 0],
+        [0, np.sin(xrd),   np.cos(xrd), 0],
+        [0, 0, 0, 1],
+    ])
+
+    yr = np.array([
+        [np.cos(yrd), 0, np.sin(yrd), 0],
+        [0, 1, 0, 0],
+        [-np.sin(yrd),  0, np.cos(yrd), 0],
+        [0, 0, 0, 1],
+    ])
+
+    zr = np.array([
+        [np.cos(zrd), -np.sin(zrd), 0, 0],
+        [np.sin(zrd),  np.cos(zrd), 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1]
+    ])
+    return np.dot(zr, np.dot(yr, xr))
+
+
+def transform(trans):
+    res = trans[0]
+    for idx in range(len(trans)-1):
+        res = np.dot(trans[idx+1], res)
+    return res
+
 
 
 def main(argv):
@@ -186,8 +253,10 @@ def main(argv):
         pts = pts.squeeze().detach().numpy().T
 
         on_prims = 0
+        """
         fig = mlab.figure(size=(400, 400), bgcolor=(1, 1, 1))
         mlab.view(azimuth=0.0, elevation=0.0, distance=2)
+        """
         # Uncomment to visualize the points sampled from the target mesh
         # t = np.array([1.2, 0, 0]).reshape(3, -1)
         # pts_n = pts + t
@@ -198,6 +267,35 @@ def main(argv):
         #     )
 
         # Keep track of the files containing the parameters of each primitive
+
+        scene = pyrender.Scene(ambient_light=[1., 1., 1.])
+        pose = np.array([
+            [1, 0,   0,   0],
+            [0,  1, 0.0, 0],
+            [0,  0,   1,   -1],
+            [0.0,  0.0, 0.0, 1.0],
+        ])
+
+        f = 1469.333
+        w = 1280
+        h = 768
+        cx = w//2
+        cy = h//2
+        #camera = pyrender.PerspectiveCamera(yfov=60/180*np.pi, aspectRatio=1.0)
+        camera = pyrender.IntrinsicsCamera(f, f, cx, cy)
+
+        camera_pose = np.array([
+            [1, 0,   0,   -1],
+            [0,  1, 0.0, -1],
+            #[0,  0,   1,   -1], #-0.5
+            [0,  0,   1,   -0.5],  # -0.5
+            [0.0,  0.0, 0.0, 1.0],
+        ])
+        #camera_pose = transform([camera_pose, rotate(y=-5)])
+
+        scene.add(camera, pose=camera_pose)
+
+
         primitive_files = []
         for i in range(args.n_primitives):
             x_tr, y_tr, z_tr, prim_pts =\
@@ -229,6 +327,22 @@ def main(argv):
             )
             if probs[0, i] >= args.prob_threshold:
                 on_prims += 1
+          
+
+                raw_mesh = \
+                    get_primitive_trimesh(
+                        pickle.load(
+                            open(
+                                os.path.join(args.output_directory, "primitive_%d.p" % (i,)),
+                                'r')
+                                    )
+                                        )
+
+                back = pyrender.Mesh.from_trimesh(raw_mesh, material=pyrender.MetallicRoughnessMaterial(
+                    baseColorFactor=[1., 1., 1., 1.]), smooth=False)
+                scene.add(back)
+
+                """
                 mlab.mesh(
                     x_tr,
                     y_tr,
@@ -236,6 +350,7 @@ def main(argv):
                     color=tuple(colors[i % len(colors)]),
                     opacity=1.0
                 )
+                """
                 primitive_files.append(
                     os.path.join(args.output_directory, "primitive_%d.p" % (i,))
                 )
@@ -255,7 +370,17 @@ def main(argv):
             print(i, probs[0, i])
 
         print("Using %d primitives out of %d" % (on_prims, args.n_primitives))
-        mlab.show()
+
+        print('start rendering...')
+        r = pyrender.OffscreenRenderer(w, h)
+        flags = RenderFlags.SKIP_CULL_FACES  # RGBA | RenderFlags.SHADOWS_DIRECTIONAL
+        color, depth = r.render(scene, flags)
+        plt.figure(figsize=(16, 12))
+        plt.axis('off')
+        plt.imshow(color)
+        skimage.io.imsave(
+            os.path.join(args.output_directory, "rendered.png"),
+            color)
 
         if args.save_prediction_as_mesh:
             print("Saving prediction as mesh....")

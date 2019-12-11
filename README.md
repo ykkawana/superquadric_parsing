@@ -8,6 +8,14 @@ This repository contains the code that accompanies our CVPR 2019 paper
 You can find detailed instructions for both training your own models and using
 pretrained models in the examples below.
 
+
+Setup
+----------------------------
+```
+./scripts/setup.sh
+./scripts/runbackend # login
+```
+
 Dependencies & Installation
 ----------------------------
 
@@ -58,7 +66,7 @@ mesh file.
 
 You can run it using
 ```
-$ ./forward_pass.py ../demo/03001627/ /tmp/ --model_tag "dac4af24e2facd7d3000ca4b04fcd6ac" --n_primitives 18 --weight_file ../config/chair_T26AK2FES_model_699 --train_with_bernoulli --use_deformations --use_sq --dataset_type shapenet_v2
+$ ./forward_pass.py ../demo/03001627/ ../output/ --model_tag "dac4af24e2facd7d3000ca4b04fcd6ac" --n_primitives 18 --weight_file ../config/chair_T26AK2FES_model_699 --train_with_bernoulli --use_deformations --use_sq --dataset_type shapenet_v2 --save_prediction_as_mesh
 ```
 
 The script requires two mandatory arguments, the path to the directory that

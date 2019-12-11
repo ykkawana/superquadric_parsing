@@ -122,6 +122,8 @@ def _from_primitive_parms_to_mesh(primitive_params):
 
     return m
 
+def get_primitive_trimesh(primitive_params):
+    return _from_primitive_parms_to_mesh(primitive_params)
 
 def save_primitive_as_ply(primitive_params, filepath):
     m = _from_primitive_parms_to_mesh(primitive_params)
