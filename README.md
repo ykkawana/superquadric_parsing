@@ -66,7 +66,7 @@ mesh file.
 
 You can run it using
 ```
-$ ./forward_pass.py ../demo/03001627/ ../output/ --model_tag "dac4af24e2facd7d3000ca4b04fcd6ac" --n_primitives 18 --weight_file ../config/chair_T26AK2FES_model_699 --train_with_bernoulli --use_deformations --use_sq --dataset_type shapenet_v2 --save_prediction_as_mesh
+$ ./forward_pass.py ../demo/03001627/ ../output/ --model_tag "dac4af24e2facd7d3000ca4b04fcd6ac" --n_primitives 18 --weight_file ../config/chair_T26AK2FES_model_699_py3 --train_with_bernoulli --use_deformations --use_sq --dataset_type shapenet_v2 --save_prediction_as_mesh
 ```
 
 The script requires two mandatory arguments, the path to the directory that

@@ -145,7 +145,7 @@ def save_prediction_as_ply(primitive_files, filepath):
     m = None
     for p in primitive_files:
         # Parse the primitive parameters
-        prim_params = pickle.load(open(p, "r"))
+        prim_params = pickle.load(open(p, "rb"))
         _m = _from_primitive_parms_to_mesh(prim_params)
         m = trimesh.util.concatenate(_m, m)
 

@@ -44,6 +44,45 @@ from learnable_primitives.voxelizers import VoxelizerFactory
 
 #from mayavi import mlab
 
+def load_model(model, args, device):
+    layer_map_ori = {
+        "_primitive_layer.layer0._translation_layer.weight": "_primitive_layer.layer1._translation_layer.weight",
+        "_primitive_layer.layer0._translation_layer.bias": "_primitive_layer.layer1._translation_layer.bias",
+        "_primitive_layer.layer1._rotation_layer.weight": "_primitive_layer.layer2._rotation_layer.weight",
+        "_primitive_layer.layer1._rotation_layer.bias": "_primitive_layer.layer2._rotation_layer.bias",
+        "_primitive_layer.layer2._size_layer.weight": "_primitive_layer.layer0._size_layer.weight",
+        "_primitive_layer.layer2._size_layer.bias": "_primitive_layer.layer0._size_layer.bias",
+        "_primitive_layer.layer3._probability_layer.weight": "_primitive_layer.layer5._probability_layer.weight",
+        "_primitive_layer.layer3._probability_layer.bias": "_primitive_layer.layer5._probability_layer.bias",
+        "_primitive_layer.layer5._tapering_layer.weight": "_primitive_layer.layer3._tapering_layer.weight",
+        "_primitive_layer.layer5._tapering_layer.bias": "_primitive_layer.layer3._tapering_layer.bias",
+        "_primitive_layer.layer4._shape_layer.weight": "_primitive_layer.layer4._shape_layer.weight",
+        "_primitive_layer.layer4._shape_layer.bias": "_primitive_layer.layer4._shape_layer.bias"
+    }
+    layer_map = {layer_map_ori[key]: key for key in layer_map_ori}
+    #layer_map = layer_map_ori
+    loaded = torch.load(args.weight_file, map_location=device)
+    loaded_copied = {} 
+    for key in loaded:
+        print(key)
+    for key, values in model.named_parameters():
+        print(key)
+    for key in loaded:
+        values = loaded[key]
+        #if key.startswith('_features_') or key.startswith('_primitive_layer.layer4._shape_layer.'):
+        #    loaded_copied[key] = loaded[key]
+        print(key)
+        if key.startswith('_primitive_layer'):
+            loaded_copied[layer_map[key]] = loaded[key]
+            #loaded_copied[key] = loaded[layer_map[key]]
+        #elif key.endswith('running_mean') or key.endswith('running_var') or key.endswith('tracked'):
+        #    loaded_copied[key] = values
+        else:
+            loaded_copied[key] = loaded[key]
+    for key in loaded_copied:
+        print(key)
+    model.load_state_dict(loaded_copied)
+    return model
 
 def get_shape_configuration(use_cuboids):
     if use_cuboids:
@@ -209,6 +248,10 @@ def main(argv):
     model = network_params.network(network_params)
     # Move model to device to be used
     model.to(device)
+
+    #model = load_model(model, args, device)
+    #torch.save(model.state_dict(), 'chair_T26AK2FES_model_699_py3')
+
     if args.weight_file is not None:
         # Load the model parameters of the previously trained model
         model.load_state_dict(
@@ -334,7 +377,7 @@ def main(argv):
                         pickle.load(
                             open(
                                 os.path.join(args.output_directory, "primitive_%d.p" % (i,)),
-                                'r')
+                                'rb')
                                     )
                                         )
 
