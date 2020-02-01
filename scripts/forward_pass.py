@@ -28,7 +28,7 @@ from arguments import add_voxelizer_parameters, add_nn_parameters, \
      voxelizer_shape, add_loss_options_parameters, add_loss_parameters
 from utils import get_colors, store_primitive_parameters
 from visualization_utils import points_on_sq_surface, points_on_cuboid, \
-    save_prediction_as_ply, get_primitive_trimesh
+    save_prediction_as_ply, get_primitive_trimesh, get_prediction_as_trimesh
 
 from learnable_primitives.common.dataset import get_dataset_type,\
     compose_transformations
@@ -334,7 +334,7 @@ def main(argv):
             [0,  0,   1,   -0.5],  # -0.5
             [0.0,  0.0, 0.0, 1.0],
         ])
-        #camera_pose = transform([camera_pose, rotate(y=-5)])
+        camera_pose = transform([camera_pose, rotate(x=-45)])
 
         scene.add(camera, pose=camera_pose)
 
@@ -371,20 +371,6 @@ def main(argv):
             if probs[0, i] >= args.prob_threshold:
                 on_prims += 1
           
-
-                raw_mesh = \
-                    get_primitive_trimesh(
-                        pickle.load(
-                            open(
-                                os.path.join(args.output_directory, "primitive_%d.p" % (i,)),
-                                'rb')
-                                    )
-                                        )
-
-                back = pyrender.Mesh.from_trimesh(raw_mesh, material=pyrender.MetallicRoughnessMaterial(
-                    baseColorFactor=[1., 1., 1., 1.]), smooth=False)
-                scene.add(back)
-
                 """
                 mlab.mesh(
                     x_tr,
@@ -415,6 +401,9 @@ def main(argv):
         print("Using %d primitives out of %d" % (on_prims, args.n_primitives))
 
         print('start rendering...')
+        scene.add(pyrender.Mesh.from_trimesh(get_prediction_as_trimesh(
+                primitive_files
+            ), smooth=False))
         r = pyrender.OffscreenRenderer(w, h)
         flags = RenderFlags.SKIP_CULL_FACES  # RGBA | RenderFlags.SHADOWS_DIRECTIONAL
         color, depth = r.render(scene, flags)

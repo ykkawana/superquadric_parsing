@@ -150,3 +150,19 @@ def save_prediction_as_ply(primitive_files, filepath):
         m = trimesh.util.concatenate(_m, m)
 
     m.export(filepath, file_type="ply")
+
+def get_prediction_as_trimesh(primitive_files):
+    if not isinstance(primitive_files, list):
+        raise Exception(
+            "Expected list and got {} as an input"
+            .format(type(primitive_files))
+        )
+    m = None
+    for p in primitive_files:
+        # Parse the primitive parameters
+        prim_params = pickle.load(open(p, "rb"))
+        _m = _from_primitive_parms_to_mesh(prim_params)
+        m = trimesh.util.concatenate(_m, m)
+
+    return m
+

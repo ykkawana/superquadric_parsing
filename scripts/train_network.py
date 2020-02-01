@@ -30,6 +30,14 @@ from learnable_primitives.models import NetworkParameters, train_on_batch, \
     optimizer_factory
 from learnable_primitives.loss_functions import euclidean_dual_loss
 from learnable_primitives.voxelizers import VoxelizerFactory
+import wandb
+import yaml
+
+def load_env(path):
+    if os.path.exists(path):
+        env = yaml.safe_load(open(path))
+        for key in env:
+            os.environ[key] = env[key] 
 
 
 def moving_average(prev_val, new_val, b):
@@ -176,6 +184,13 @@ def main(argv):
         help="Seed for the PRNG"
     )
 
+    parser.add_argument(
+        "--subset",
+        type=int,
+        default=None,
+        help="Subset of dataset for debug"
+    )
+
     add_nn_parameters(parser)
     add_dataset_parameters(parser)
     add_voxelizer_parameters(parser)
@@ -188,6 +203,11 @@ def main(argv):
     # Parameters related to loss options
     add_loss_options_parameters(parser)
     args = parser.parse_args(argv)
+
+
+    load_env('../.env.yaml')
+    wandb.init()
+    wandb.config.update(args)
 
     if args.train_test_splits_file is not None:
         train_test_splits = parse_train_test_splits(
@@ -277,6 +297,9 @@ def main(argv):
         args.n_points_from_mesh,
         transform=compose_transformations(args.voxelizer_factory)
     )
+
+    #if not args.subset is None:
+    #    training_dataset =  torch.utils.data.Subset(training_dataset, range(args.subset))
     # Create a batchprovider object to start generating batches
     train_bp = BatchProvider(
         training_dataset,
@@ -294,10 +317,13 @@ def main(argv):
     # Check whether there is a weight file provided to continue training from
     if args.weight_file is not None:
         model.load_state_dict(torch.load(args.weight_file))
+
     model.train()
 
     # Build an optimizer object to compute the gradients of the parameters
     optimizer = optimizer_factory(args, model)
+
+    wandb.watch(model)
 
     # Loop over the dataset multiple times
     pcl_to_prim_losses = []
@@ -363,6 +389,18 @@ def main(argv):
 
             bar.exp_n_prims = metrics[0].sum(-1).mean()
             # Update the file that keeps track of the statistics
+            log = {
+                'epoch': i,
+                'loss': bar.loss,
+                'pcl_to_prim_loss': bar.pcl_to_prim_loss,
+                'prim_to_pcl_loss': bar.prim_to_pcl_loss,
+                'bernoulli_regularizer': bar.bernoulli_regularizer,
+                'entropy_bernoulli_regularizer': bar.entropy_bernoulli_regularizer,
+                'parsimony_regularizer': bar.parsimony_regularizer,
+                'overlapping_regularizer': bar.overlapping_regularizer,
+                'sparsity_regularizer': bar.sparsity_regularizer
+            }
+            wandb.log(log)
             train_stats_f.write(
                 ("%d %.8f %.8f %.8f %.6f %.6f %.6f %.6f %.6f") %(
                 i, bar.loss, bar.pcl_to_prim_loss, bar.prim_to_pcl_loss,
@@ -380,13 +418,12 @@ def main(argv):
         bar.finish()
         # Stop the batch provider
         train_bp.stop()
-        torch.save(
-            model.state_dict(),
-            os.path.join(
-                experiment_directory,
-                "model_%d" % (i + args.continue_from_epoch,)
-            )
-        )
+        model_path = os.path.join(wandb.run.dir, 'model_{}.pth'.format(i))
+        optimizer_path = os.path.join(wandb.run.dir, 'optimizer_{}.pth'.format(i))
+        torch.save(model.state_dict(), model_path)
+        torch.save(optimizer.state_dict(), optimizer_path)
+        wandb.save(model_path)
+        wandb.save(optimizer_path)
 
     print([
         sum(losses[args.steps_per_epoch:]) / float(args.steps_per_epoch),
