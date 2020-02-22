@@ -11,6 +11,7 @@ chosen = random.sample(filepaths, 3)
 print(chosen)
 margin = 5 
 for idx, path in enumerate(chosen):
+    print(path)
     img = skimage.io.imread(path)
     print(img.shape)
     mask = img[:, :, 3]
