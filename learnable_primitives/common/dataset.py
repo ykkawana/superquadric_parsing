@@ -42,11 +42,27 @@ class BaseDataset(Dataset):
         return len(self._dataset_object)
 
     def __getitem__(self, idx):
+        stay = True
+        while stay: 
+            try:
+                m = self._dataset_object[idx]
+                # print m.path_to_mesh_file
+                # print m.path_to_tsdf_file
+                X = self._voxelizer.get_X(m)
+                stay = False
+            except:
+                idx += 1
+                if len(self._dataset_object) == idx:
+                    idx = 0
+        
+        mesh = m.groundtruth_mesh
+        """
         m = self._dataset_object[idx]
         # print m.path_to_mesh_file
         # print m.path_to_tsdf_file
         X = self._voxelizer.get_X(m)
         mesh = m.groundtruth_mesh
+        """
         y_target = mesh.sample_faces(self._n_points_from_mesh)
 
         datapoint = (

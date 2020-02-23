@@ -1,6 +1,8 @@
 import torch
 import math
 from collections import defaultdict
+from external.QuaterNet.common import quaternion
+import numpy as np
 
 
 def safe_atan(y, x):
@@ -13,7 +15,8 @@ def generate_grid_samples(grid_size,
                           batch=1,
                           sampling='grid',
                           sample_num=100,
-                          device='cpu'):
+                          device='cpu',
+                          dim=2):
     """
   Arguments:
     grid_size (int, list): sample from [-grid_size, grid_size] range if it's int, otherwise sample within grid_size if it's list
@@ -21,45 +24,37 @@ def generate_grid_samples(grid_size,
     sampling (str): sample gridwise if it's `grid`, sample by uniform dist. if it's `uniform`.
     sample_num (int): number of samples when sampling is `uniform`
     device: if set, data will be initialized on that device. otherwise will be stored on `cpu`.
+    dim: 2 or 3
   Returns:
-    xs (B, sample size)
-    ys (B, sample size)
+    coord (B, sample size, dim)
   """
+    assert dim in [2, 3]
     if isinstance(grid_size, list):
         sampling_start, sampling_end = grid_size
     else:
         sampling_start, sampling_end = -grid_size, grid_size
-    if sampling == 'grid':
-        sampling_range = torch.linspace(sampling_start,
-                                        sampling_end,
-                                        sample_num,
-                                        device=device)
-        xs, ys = torch.meshgrid([sampling_range, sampling_range])
 
-        def contiguous_batch(s):
-            return s.contiguous().view(1, -1).repeat(batch, 1)
+    def contiguous_batch(s):
+        return s.contiguous().view(1, -1).repeat(batch, 1)
 
-        xs_batched = contiguous_batch(xs)
-        ys_batched = contiguous_batch(ys)
-    elif sampling == 'uniform':
+    ranges = []
+    for _ in range(dim):
+        if sampling == 'grid':
+            sampling_points = torch.linspace(sampling_start,
+                                             sampling_end,
+                                             sample_num,
+                                             device=device)
+        elif sampling == 'uniform':
+            sampling_points = torch.empty(sample_num * batch,
+                                          device=device).uniform_(
+                                              sampling_start, sampling_end)
+        else:
+            raise NotImplementedError('no such sampling mode')
 
-        def sample_uniform():
-            return torch.empty(sample_num * batch,
-                               device=device).uniform_(sampling_start,
-                                                       sampling_end)
+        ranges.append(sampling_points)
 
-        sampling_point_x = sample_uniform()
-        sampling_point_y = sample_uniform()
-        xs, ys = torch.meshgrid(sampling_point_x, sampling_point_y)
-
-        def contiguous_batch(s):
-            return s.contiguous().view(batch, -1)
-
-        xs_batched = contiguous_batch(xs)
-        ys_batched = contiguous_batch(ys)
-    else:
-        raise NotImplementedError('no such sampling mode')
-    return xs_batched, ys_batched
+    coord_list = [contiguous_batch(s) for s in torch.meshgrid(ranges)]
+    return torch.stack(coord_list, axis=-1)
 
 
 def get_single_input_element(theta, m, n1, n2, n3, a, b):
@@ -90,22 +85,29 @@ def generate_single_primitive_params(m,
                                          0.,
                                      ],
                                      linear_scale=[1., 1.],
-                                     logit=None):
-    n1 = torch.tensor([1. / n1]).float().view(1, 1)
-    n2 = torch.tensor([n2]).float().view(1, 1)
-    n3 = torch.tensor([n3]).float().view(1, 1)
-    a = torch.tensor([1. / a]).float().view(1, 1)
-    b = torch.tensor([1. / b]).float().view(1, 1)
-    transition = torch.tensor(transition).float().view(1, 1, 2)
-    rotation = torch.tensor(rotation).float().view(1, 1)
-    linear_scale = torch.tensor(linear_scale).float().view(1, 1, 2)
+                                     logit=None,
+                                     dim=2):
+    assert dim in [2, 3]
+    n1 = torch.tensor([1. / n1]).float().view(1, 1, 1).repeat(1, 1, dim - 1)
+    n2 = torch.tensor([n2]).float().view(1, 1, 1).repeat(1, 1, dim - 1)
+    n3 = torch.tensor([n3]).float().view(1, 1, 1).repeat(1, 1, dim - 1)
+    a = torch.tensor([1. / a]).float().view(1, 1, 1).repeat(1, 1, dim - 1)
+    b = torch.tensor([1. / b]).float().view(1, 1, 1).repeat(1, 1, dim - 1)
+    transition = torch.tensor(transition).float().view(1, 1, dim)
+    if dim == 2:
+        rotation = torch.tensor(rotation).float().view(1, 1, 1)
+    else:
+        rotation = torch.tensor(rotation).float().view(1, 1, 4)
+    linear_scale = torch.tensor(linear_scale).float().view(1, 1, dim)
 
     if logit:
-        m_vector = linear_scale = torch.tensor(logit).float().view(1, 1, -1)
+        m_vector = linear_scale = torch.tensor(logit).float().view(
+            1, 1, -1, 1).repeat(1, 1, 1, dim - 1)
     else:
         logit = [0.] * (m + 1)
         logit[m] = 1.
-        m_vector = torch.tensor(logit).float().view(1, 1, m + 1)
+        m_vector = torch.tensor(logit).float().view(1, 1, m + 1, 1).repeat(
+            1, 1, 1, dim - 1)
 
     return {
         'n1': n1,
@@ -127,9 +129,9 @@ def generate_multiple_primitive_params(m,
                                        n3,
                                        a,
                                        b,
-                                       rotations=[
-                                           0.,
-                                           0.,
+                                       rotations_angle=[
+                                           [0.],
+                                           [0.],
                                        ],
                                        transitions=[[
                                            0.,
@@ -142,6 +144,17 @@ def generate_multiple_primitive_params(m,
                                        logit=None):
     params = defaultdict(lambda: [])
     n = len(transitions)
+    assert len(transitions) == len(rotations_angle), len(linear_scales)
+    dim = len(transitions[0])
+    assert dim in [2, 3]
+
+    if dim == 2:
+        assert len(rotations_angle[0]) == 1
+        rotations = rotations_angle
+    else:
+        assert len(rotations_angle[0]) == 3
+        rotations = convert_angles_to_quaternions(rotations_angle)
+
     for idx in range(n):
         param = generate_single_primitive_params(
             m,
@@ -153,7 +166,8 @@ def generate_multiple_primitive_params(m,
             rotation=rotations[idx],
             transition=transitions[idx],
             linear_scale=linear_scales[idx],
-            logit=None)
+            logit=None,
+            dim=dim)
         for key in param:
             params[key].append(param[key])
     return_param = {}
@@ -164,3 +178,11 @@ def generate_multiple_primitive_params(m,
     return_param['prob'] = None
 
     return return_param
+
+
+def convert_angles_to_quaternions(rotations_angle):
+    rotations = []
+    for rotation in rotations_angle:
+        rotations.append(
+            quaternion.euler_to_quaternion(np.array(rotation), 'xyz').tolist())
+    return rotations

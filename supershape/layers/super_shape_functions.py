@@ -5,9 +5,36 @@ import utils
 EPS = 1e-7
 
 
-def rtheta2xy(r, thetas):
-    xy = torch.stack([thetas.cos(), thetas.sin()], axis=-1) * r
-    return xy
+def polar2cartesian(radius, angles):
+    """Convert polar coordinate to cartesian coordinate.
+    Args:
+        r: radius (B, N, P, 1 or 2) last dim is one in 2D mode, two in 3D.
+        angles: angle (B, 1, P, 1 or 2) 
+    """
+    dim = radius.shape[-1]
+    dim2 = angles.shape[-1]
+    P = radius.shape[-2]
+    P2 = angles.shape[-2]
+    assert dim == dim2
+    assert dim in [1, 2]
+    assert P == P2
+
+    theta = angles[..., 0]
+    phi = torch.zeros([1], device=angles.device) if dim == 1 else angles[...,
+                                                                         1]
+    r1 = radius[..., 0]
+    r2 = torch.ones([1], device=radius.device) if dim == 1 else radius[..., 1]
+
+    phicosr2 = phi.cos() * r2
+    cartesian_coord_list = [
+        theta.cos() * r1 * phicosr2,
+        theta.sin() * r1 * phicosr2
+    ]
+
+    # 3D
+    if dim == 2:
+        cartesian_coord_list.append(phi.sin() * r2)
+    return torch.stack(cartesian_coord_list, axis=-1)
 
 
 def rational_supershape_by_m(theta, m, n1, n2, n3, a, b):
@@ -49,12 +76,28 @@ def implicit_rational_supershape_by_m(x, y, m, n1, n2, n3, a, b):
     return indicator
 
 
-def implicit_rational_supershape(x, y, angles, n1, n2, n3, a, b):
-    theta = utils.safe_atan(y, x) * angles
+def implicit_rational_supershape(coord, angles, n1, n2, n3, a, b):
+    dim = coord.shape[-1]
+    x = coord[..., 0]
+    y = coord[..., 1]
+    z = torch.zeros([1], device=coord.device) if dim == 2 else coord[..., 2]
+    assert angles.shape[-1] == dim - 1
+    theta = utils.safe_atan(y, x) * angles[..., 0]
     assert not torch.isnan(theta).any(), (theta)
-    r = rational_supershape(theta, theta.sin(), theta.cos(), n1, n2, n3, a, b)
-    indicator = layer_utils.get_indicator(x, y, r)
+    r1 = rational_supershape(theta, theta.sin(), theta.cos(), n1[..., 0],
+                             n2[..., 0], n3[..., 0], a[..., 0], b[..., 0])
+
+    phi = utils.safe_atan(z * r1 * x.cos(), x)
+    assert not torch.isnan(phi).any(), (phi)
+    r2 = 1. if dim == 2 else rational_supershape(
+        phi, phi.sin(), phi.cos(), n1[..., 1], n2[..., 1], n3[...,
+                                                              1], a[...,
+                                                                    1], b[...,
+                                                                          1])
+
+    indicator = layer_utils.get_indicator(x, y, z, r1, r2, phi)
     assert not torch.isnan(indicator).any(), indicator
+    print(indicator.shape)
     return indicator
 
 

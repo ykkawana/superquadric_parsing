@@ -14,7 +14,25 @@ class SuperShapes(nn.Module):
                  train_logits=True,
                  train_linear_scale=True,
                  quadrics=False,
-                 train_ab=True):
+                 train_ab=True,
+                 dim=2):
+        """Initialize SuperShapes.
+
+        Args:
+            max_m: Max number of vertices in a primitive. If quadrics is True,
+                then max_m must be larger than 4.
+            n_primitives: Number of primitives to use.
+            rational: Use rational (stable gradient) version of supershapes
+            debug: debug mode.
+            train_logits: train logits flag.
+            train_linear_scale: train linear scale flag.
+            quadrics: quadrics mode flag. In this mode, n1, n2, n3 are set
+                to one and not trained, and logits is not trained and 5th 
+                element of m_vector is always one and the rest are zero.
+            dim: if dim == 2, then 2D mode. If 3, 3D mode.
+        Raises:
+            NotImplementedError: when dim is neither 2 nor 3.
+        """
         super(SuperShapes, self).__init__()
         self.debug = debug
         self.n_primitives = n_primitives
@@ -23,6 +41,9 @@ class SuperShapes(nn.Module):
         self.quadrics = quadrics
         self.train_logits = train_logits
         self.train_ab = train_ab
+        self.dim = dim
+        if not self.dim in [2, 3]:
+            raise NotImplementedError('dim must be either 2 or 3.')
         if self.rational:
             self.n23scale = 10.
             self.n23bias = 1.
@@ -37,41 +58,54 @@ class SuperShapes(nn.Module):
         if self.quadrics:
             assert max_m >= 4, 'super quadrics musth have m bigger than 4.'
 
-        # 1, n_primitives, max_m, 1
-        if self.quadrics:
-            self.logits = nn.Parameter(
-                torch.eye(self.max_m).view(
+        # 1, n_primitives, max_m, 1, dim-1
+        logits_list = []
+        for idx in range(self.dim - 1):
+            if self.quadrics:
+                logits = torch.eye(self.max_m).view(
                     1, 1, self.max_m, self.max_m)[:, :, 4, :].repeat(
-                        1, n_primitives, 1).float() * 10)
-        elif not self.train_logits:
-            self.logits = nn.Parameter(
-                torch.eye(self.max_m).view(1, 1, self.max_m, self.max_m)
-                [:, :,
-                 (self.max_m - 1), :].repeat(1, n_primitives, 1).float() * 10)
-        else:
-            self.logits = nn.Parameter(
-                torch.Tensor(1, n_primitives, self.max_m))
-        assert [*self.logits.shape] == [1, n_primitives, self.max_m]
+                        1, n_primitives, 1).float() * 10
+            elif not self.train_logits:
+                logits = torch.eye(self.max_m).view(
+                    1, 1, self.max_m,
+                    self.max_m)[:, :, (self.max_m - 1), :].repeat(
+                        1, n_primitives, 1).float() * 10
+            else:
+                logits = torch.Tensor(1, n_primitives, self.max_m)
+            logits_list.append(logits)
+        self.logits = torch.stack(logits_list, axis=-1)
+        assert [*self.logits.shape
+                ] == [1, n_primitives, self.max_m, self.dim - 1]
 
         # Shape params
         # B=1, n_primitives, 1, 1
-        self.n1 = nn.Parameter(torch.Tensor(1, self.n_primitives))
-        self.n2 = nn.Parameter(torch.Tensor(1, self.n_primitives))
-        self.n3 = nn.Parameter(torch.Tensor(1, self.n_primitives))
+        self.n1 = nn.Parameter(torch.Tensor(1, self.n_primitives,
+                                            self.dim - 1))
+        self.n2 = nn.Parameter(torch.Tensor(1, self.n_primitives,
+                                            self.dim - 1))
+        self.n3 = nn.Parameter(torch.Tensor(1, self.n_primitives,
+                                            self.dim - 1))
 
+        assert [*self.n1.shape] == [1, self.n_primitives, self.dim - 1]
         # Pose params
         # B=1, n_primitives, 2
-        self.transition = nn.Parameter(torch.Tensor(1, n_primitives, 2))
+        self.transition = nn.Parameter(torch.Tensor(1, n_primitives, self.dim))
         # B=1, n_primitives, 1
-        self.rotation = nn.Parameter(torch.Tensor(1, n_primitives))
+        if self.dim == 2:
+            self.rotation = nn.Parameter(torch.Tensor(1, n_primitives, 1))
+        else:
+            # Quaternion
+            self.rotation = nn.Parameter(torch.Tensor(1, n_primitives, 4))
+
         # B=1, n_primitives, 2
-        self.linear_scale = nn.Parameter(torch.Tensor(1, n_primitives, 2))
+        self.linear_scale = nn.Parameter(
+            torch.Tensor(1, n_primitives, self.dim))
         self.linear_scale.requires_grad = train_linear_scale
 
         # B=1, n_primitives, 1, 1
-        self.a = nn.Parameter(torch.Tensor(1, self.n_primitives))
-        self.b = nn.Parameter(torch.Tensor(1, self.n_primitives))
-        assert [*self.a.shape] == [1, self.n_primitives]
+        self.a = nn.Parameter(torch.Tensor(1, self.n_primitives, self.dim - 1))
+        self.b = nn.Parameter(torch.Tensor(1, self.n_primitives, self.dim - 1))
+        assert [*self.a.shape] == [1, self.n_primitives, self.dim - 1]
         if not self.train_ab:
             self.a.requires_grad = False
             self.b.requires_grad = True

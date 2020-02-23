@@ -206,8 +206,6 @@ def main(argv):
 
 
     load_env('../.env.yaml')
-    wandb.init()
-    wandb.config.update(args)
 
     if args.train_test_splits_file is not None:
         train_test_splits = parse_train_test_splits(
@@ -323,6 +321,8 @@ def main(argv):
     # Build an optimizer object to compute the gradients of the parameters
     optimizer = optimizer_factory(args, model)
 
+    wandb.init()
+    wandb.config.update(args)
     wandb.watch(model)
 
     # Loop over the dataset multiple times

@@ -1,0 +1,4 @@
+[submodule "supershape/external/QuaterNet"]
+	path = supershape/external/QuaterNet
+	url = https://github.com/facebookresearch/QuaterNet.git
+	branch = master
