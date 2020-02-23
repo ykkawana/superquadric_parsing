@@ -38,12 +38,12 @@ class SuperShapeSampler(nn.Module):
 
         # Angle params
         # 1, 1, max_m, 1, 1
-        index = torch.arange(start=0, end=max_m + 1,
-                             step=1).view(1, 1, -1, 1, 1).float()
+        index = torch.arange(start=0, end=max_m + 1, step=1).view(
+            1, 1, -1, 1, 1).float().repeat(1, 1, 1, 1, self.dim - 1)
         # 1, 1, max_m, 1, 1
         self.angles = index / 4.
-        assert [*self.angles.shape] == [1, 1, self.max_m, 1,
-                                        1], (self.angles.shape, self.max_m)
+        assert [*self.angles.shape] == [1, 1, self.max_m, 1, self.dim - 1
+                                        ], (self.angles.shape, self.max_m)
 
     def to(self, device):
         super().to(device)
@@ -173,11 +173,11 @@ class SuperShapeSampler(nn.Module):
         transition = reshaped_params['transition']
         linear_scale = reshaped_params['linear_scale']
 
-        assert len(angles.shape) == 3
+        assert len(angles.shape) == 3, angles.shape
         B, P, D = angles.shape
 
         #radius = self.transform_circumference_angle_to_super_shape_radius(thetas, primitive_params)
-        assert len(radius.shape) == 4
+        assert len(radius.shape) == 4, radius.shape
         # r = (B, n_primitives, P, dim - 1)
         r = radius.view(B, self.n_primitives, P, D)
 
@@ -243,24 +243,21 @@ class SuperShapeSampler(nn.Module):
                                          D).repeat(1, self.n_primitives, 1, 1,
                                                    1)
 
-        print(m_vector.shape)
         sgn = self.get_sgn(coord_dim_added, self.angles, n1, n2, n3, a, b,
-                           m_vector, *args, **kwargs) * m_vector
-        assert [*sgn.shape] == [B, self.n_primitives, self.max_m, P]
-        # B, n_primitives, P
-        output_sgn = sgn.sum(2)
-        return output_sgn
+                           m_vector, *args, **kwargs)
+        assert [*sgn.shape] == [B, self.n_primitives, P]
+        return sgn
 
     def get_sgn(self, coord_dim_added, angles, n1, n2, n3, a, b, m_vector,
                 *args, **kwargs):
         if self.rational:
-            # B, n_primitives, max_m, P
+            # B, n_primitives, P
             sgn = super_shape_functions.implicit_rational_supershape(
-                coord_dim_added, self.angles, n1, n2, n3, a, b)
+                coord_dim_added, self.angles, n1, n2, n3, a, b, m_vector)
         else:
             raise NotImplementedError('implicit supershape not supported yet.')
             sgn = super_shape_functions.implicit_supershape(
-                coord_dim_added, self.angles, n1, n2, n3, a, b)
+                coord_dim_added, self.angles, n1, n2, n3, a, b, m_vector)
         return sgn
 
     def extract_super_shapes_surface_point(self, super_shape_point,

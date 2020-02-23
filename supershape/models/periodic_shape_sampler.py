@@ -147,7 +147,8 @@ class PeriodicShapeSampler(super_shape_sampler.SuperShapeSampler):
             raise NotImplementedError('Mode mush be one of scratch or delta')
         return radius
 
-    def get_sgn(self, x, y, angles, n1, n2, n3, a, b, *args, **kwargs):
+    def get_sgn(self, x, y, angles, n1, n2, n3, a, b, m_vector, *args,
+                **kwargs):
         points = kwargs['points']
         theta = utils.safe_atan(y, x)
         B, _, _, P = theta.shape
@@ -169,4 +170,5 @@ class PeriodicShapeSampler(super_shape_sampler.SuperShapeSampler):
         assert [*r.shape] == [B, self.n_primitives, self.max_m, P]
 
         indicator = layer_utils.get_indicator(x, y, r)
+        assert [*indicator.shape] == [B, self.n_primitives, P]
         return indicator

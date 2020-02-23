@@ -3,6 +3,7 @@ import math
 from collections import defaultdict
 from external.QuaterNet.common import quaternion
 import numpy as np
+import warnings
 
 
 def safe_atan(y, x):
@@ -17,28 +18,38 @@ def generate_grid_samples(grid_size,
                           sample_num=100,
                           device='cpu',
                           dim=2):
+    """Generate mesh grid.
+    Args:
+        grid_size (int, list, dict):
+            if type is int, sample between [-grid_size, grid_size] range for all
+            dims.
+            if type is list, sample between grid_size for all dims. 
+            if type is dict, For each dim, sample between each element of `range` in grid_size 
+            with number of samples specified by `sample_num` in grid_size.
+        batch (int): batch size. Sample size will be batch size * grid samples
+        sampling (str): sample gridwise if it's `grid`, sample by uniform dist. if it's `uniform`.
+        sample_num (int): number of samples. If grid_type is dict, this argument will be ignored.
+        device: if set, data will be initialized on that device. otherwise will be stored on `cpu`.
+        dim: 2 or 3
+    Returns:
+        coord (B, sample size, dim)
     """
-  Arguments:
-    grid_size (int, list): sample from [-grid_size, grid_size] range if it's int, otherwise sample within grid_size if it's list
-    batch (int): batch size. Sample size will be batch size * grid samples
-    sampling (str): sample gridwise if it's `grid`, sample by uniform dist. if it's `uniform`.
-    sample_num (int): number of samples when sampling is `uniform`
-    device: if set, data will be initialized on that device. otherwise will be stored on `cpu`.
-    dim: 2 or 3
-  Returns:
-    coord (B, sample size, dim)
-  """
     assert dim in [2, 3]
     if isinstance(grid_size, list):
         sampling_start, sampling_end = grid_size
-    else:
+    elif isinstance(grid_size, int):
         sampling_start, sampling_end = -grid_size, grid_size
+    else:
+        warnings.warn('sample_num will be ignored')
 
     def contiguous_batch(s):
         return s.contiguous().view(1, -1).repeat(batch, 1)
 
     ranges = []
-    for _ in range(dim):
+    for idx in range(dim):
+        if isinstance(grid_size, dict):
+            sampling_start, sampling_end = grid_size['range'][idx]
+            sample_num = grid_size['sample_num'][idx]
         if sampling == 'grid':
             sampling_points = torch.linspace(sampling_start,
                                              sampling_end,
