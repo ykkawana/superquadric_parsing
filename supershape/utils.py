@@ -5,11 +5,54 @@ from external.QuaterNet.common import quaternion
 import numpy as np
 import warnings
 
+EPS = 1e-7
+
 
 def safe_atan(y, x):
     theta = torch.atan2(y, x)
     theta = torch.where(theta >= 0, theta, (2 * math.pi + theta))
     return theta
+
+
+def sphere_polar2cartesian(radius, angles):
+    assert len(radius.shape) == len(angles.shape)
+    assert radius.shape[-1] == 1
+    B, N, P, D = radius.shape
+    theta = angles[..., 0]
+    phi = torch.zeros(
+        [1], device=theta.device) if angles.shape[-1] == 1 else angles[..., 1]
+
+    x = radius.squeeze(-1) * theta.cos() * phi.cos()
+    y = radius.squeeze(-1) * theta.sin() * phi.cos()
+    coord = [x, y]
+    if angles.shape[-1] == 2:
+        z = phi.sin() * radius.squeeze(-1)
+        coord.append(z)
+    return torch.stack(coord, axis=-1)
+
+
+def sphere_cartesian2polar(coord):
+    r = ((coord**2).sum(-1) + EPS).sqrt().unsqueeze(-1)
+    theta = safe_atan(coord[..., 1], coord[..., 0]).unsqueeze(-1)
+    angles = [theta]
+    if coord.shape[-1] == 3:
+        phi = safe_atan(coord[..., 2].unsqueeze(-1) * r * theta.sin(),
+                        coord[..., 1].unsqueeze(-1))
+        angles.append(phi)
+    angles = torch.cat(angles, axis=-1)
+    return r, angles
+
+
+def supershape_angles(radius, coord, angles):
+    theta = safe_atan(coord[..., 1], coord[..., 0]).unsqueeze(-1)
+    new_angles = [theta]
+
+    if coord.shape[-1] == 3:
+        phi = safe_atan(coord[..., 2] * radius[..., 0] * angles[..., 0].sin(),
+                        coord[..., 1]).unsqueeze(-1)
+        new_angles.append(phi)
+
+    return torch.cat(new_angles, axis=-1)
 
 
 def generate_grid_samples(grid_size,
@@ -152,6 +195,7 @@ def generate_multiple_primitive_params(m,
                                            0.,
                                        ]],
                                        linear_scales=[[1., 1.], [1., 1.]],
+                                       nn=None,
                                        logit=None):
     params = defaultdict(lambda: [])
     n = len(transitions)
@@ -167,6 +211,8 @@ def generate_multiple_primitive_params(m,
         rotations = convert_angles_to_quaternions(rotations_angle)
 
     for idx in range(n):
+        if not nn is None and idx > nn - 1:
+            break
         param = generate_single_primitive_params(
             m,
             n1,

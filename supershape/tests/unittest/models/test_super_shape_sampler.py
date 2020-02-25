@@ -52,6 +52,113 @@ def test_reshape_params_check_shape_3d():
         linear_scales=linear_scales)
 
 
+def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_2d(
+):
+    """Test if posed points are in correct place."""
+    batch = 3
+    m = 4
+    n = 2
+    n1 = 1
+    n2 = 1
+    n3 = 1
+    a = 1
+    b = 1
+    theta = math.pi / 2.
+    dim = 2
+    points_num = 5
+
+    rotations = [[0.], [0.]]
+    transitions = [[0., 0.], [1., 0.]]
+
+    sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
+    preset_params = utils.generate_multiple_primitive_params(
+        m,
+        n1,
+        n2,
+        n3,
+        a,
+        b,
+        rotations_angle=rotations,
+        transitions=transitions)
+
+    thetas_list = [math.pi / 2., 0., math.pi / 4.]
+    P = len(thetas_list)
+    thetas = torch.tensor(thetas_list).view(1, P, dim - 1).repeat(batch, 1, 1)
+
+    radius = sampler.transform_circumference_angle_to_super_shape_radius(
+        thetas, preset_params)
+
+    cartesian_coord = sampler.transform_circumference_angle_to_super_shape_world_cartesian_coord(
+        thetas, radius, preset_params)
+
+    assert [*cartesian_coord.shape] == [batch, n, P, dim]
+    target_cartesian_coord_n1 = torch.tensor([[0., 1.], [1., 0.],
+                                              [0.5, 0.5]]).view(1, P, dim)
+    target_cartesian_coord_n2 = target_cartesian_coord_n1.clone()
+    target_cartesian_coord_n2[..., 0] += 1
+    target_cartesian_coord = torch.cat(
+        [target_cartesian_coord_n1, target_cartesian_coord_n2], axis=0)
+
+    assert torch.allclose(cartesian_coord[0], target_cartesian_coord, atol=EPS)
+
+
+def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_3d(
+):
+    """Test if posed points are in correct place."""
+    batch = 3
+    m = 4
+    n = 2
+    n1 = 1
+    n2 = 1
+    n3 = 1
+    a = 1
+    b = 1
+    theta = math.pi / 2.
+    dim = 3
+    points_num = 5
+
+    rotations = [[0., 0., 0.], [0., 0., 0.]]
+    transitions = [[0., 0., 0.], [1., 0., 0.]]
+    linear_scales = [[1., 1., 1.]] * n
+
+    sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
+
+    preset_params = utils.generate_multiple_primitive_params(
+        m,
+        n1,
+        n2,
+        n3,
+        a,
+        b,
+        rotations_angle=rotations,
+        transitions=transitions,
+        linear_scales=linear_scales)
+
+    thetas_list = [[math.pi / 2., 0.], [0., 0.], [math.pi / 4., 0.],
+                   [math.pi, 0.], [math.pi / 2., math.pi / 2.]]
+    P = len(thetas_list)
+    thetas = torch.tensor(thetas_list).view(1, P, dim - 1).repeat(batch, 1, 1)
+
+    radius = sampler.transform_circumference_angle_to_super_shape_radius(
+        thetas, preset_params)
+
+    cartesian_coord = sampler.transform_circumference_angle_to_super_shape_world_cartesian_coord(
+        thetas, radius, preset_params)
+
+    assert [*cartesian_coord.shape] == [batch, n, P, dim]
+    target_cartesian_coord_n1 = torch.tensor([[0., 1., 0.], [1., 0., 0.],
+                                              [0.5, 0.5, 0.], [-1., 0., 0.],
+                                              [0., 0., 1.]]).view(1, P, dim)
+    target_cartesian_coord_n2 = target_cartesian_coord_n1.clone()
+    target_cartesian_coord_n2[..., 0] += 1
+    target_cartesian_coord = torch.cat(
+        [target_cartesian_coord_n1, target_cartesian_coord_n2], axis=0)
+
+    assert torch.allclose(cartesian_coord[0],
+                          target_cartesian_coord,
+                          atol=EPS * 1e+1)
+
+
 def test_transform_circumference_angle_to_super_shape_radius_2d():
     # If m = 4 and all other params is 1 except n, then the shape is square.
     # It's vertical and horizontal length is very close to one,
@@ -72,7 +179,7 @@ def test_transform_circumference_angle_to_super_shape_radius_2d():
      ainv_tensor,
      binv_tensor) = utils.get_single_input_element(theta, m, n1, n2, n3, a, b)
 
-    target_radius = torch.tensor([0.5] * P)
+    target_radius = torch.tensor([1.] * P)
 
     sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
     preset_params = utils.generate_multiple_primitive_params(
@@ -162,142 +269,10 @@ def test_transform_circumference_angle_to_super_shape_radius_3d():
     assert [*radius.shape] == [batch, n, P, dim - 1]
 
     # All primitives length must be around 0.5.
-    target_radius = torch.tensor([0.5] * P)
+    target_radius = torch.tensor([1.] * P)
     assert torch.allclose(
         target_radius.view(1, 1, P, 1).repeat(batch, n, 1, dim - 1),
         radius), radius.min()
-    """
-    # Test in more complicated shape
-    m = 6
-    n1 = 3
-    n2 = 10
-    n3 = 5
-
-    (_, m_tensor, n1inv_tensor, n2_tensor, n3_tensor, ainv_tensor,
-     binv_tensor) = utils.get_single_input_element(theta, m, n1, n2, n3, a, b)
-
-    target_radius = super_shape_functions.rational_supershape_by_m(
-        batched_theta_test_tensor, m_tensor, n1inv_tensor, n2_tensor,
-        n3_tensor, ainv_tensor, binv_tensor)
-
-    sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
-    preset_params = utils.generate_multiple_primitive_params(
-        m,
-        n1,
-        n2,
-        n3,
-        a,
-        b,
-        rotations_angle=rotations,
-        transitions=transitions,
-        linear_scales=linear_scales)
-    radius = sampler.transform_circumference_angle_to_super_shape_radius(
-        batched_theta_test_tensor, preset_params)
-
-    print(target_radius.view(batch, n, P, 1).repeat(1, 1, 1, dim - 1)[0][0])
-    print(radius[0][0])
-    assert torch.all(
-        torch.eq(
-            target_radius.view(batch, n, P, 1).repeat(1, 1, 1, dim - 1),
-            radius))
-
-    """
-
-
-def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_2d(
-):
-    """Test if posed points are in correct place."""
-    batch = 3
-    m = 4
-    n = 2
-    n1 = 1
-    n2 = 1
-    n3 = 1
-    a = 1
-    b = 1
-    theta = math.pi / 2.
-    P = 7
-    dim = 2
-
-    rotations = [[0.], [math.pi / 2]]
-    transitions = [[0., 0.], [1., 0.]]
-
-    sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
-    preset_params = utils.generate_multiple_primitive_params(
-        m,
-        n1,
-        n2,
-        n3,
-        a,
-        b,
-        rotations_angle=rotations,
-        transitions=transitions)
-
-    batched_theta_test_tensor = torch.tensor(
-        [theta] * P * (dim - 1)).repeat(batch).view(batch, P, dim - 1)
-
-    batched_radius_tensor = torch.tensor([0.5] * P * (dim - 1)).view(
-        1, 1, P, dim - 1).repeat(batch, n, 1, 1)
-    points = sampler.transform_circumference_angle_to_super_shape_world_cartesian_coord(
-        batched_theta_test_tensor, batched_radius_tensor, preset_params)
-
-    assert [*points.shape] == [batch, n, P, dim]
-    target_points = torch.tensor([[0., 0.5],
-                                  [0.5, 0.]]).view(1, n, -1,
-                                                   dim).repeat(batch, 1, P, 1)
-    assert torch.allclose(points, target_points, atol=EPS)
-
-
-def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_3d(
-):
-    """Test if posed points are in correct place."""
-    batch = 3
-    m = 4
-    n = 2
-    n1 = 1
-    n2 = 1
-    n3 = 1
-    a = 1
-    b = 1
-    theta = math.pi / 2.
-    dim = 3
-
-    rotations = [[0., 0., 0.], [0., math.pi / 2., 0.]]
-    transitions = [[0., 0., 0.], [1., 0., 0.]]
-    linear_scales = [[1., 1., 1.]] * n
-
-    sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
-    preset_params = utils.generate_multiple_primitive_params(
-        m,
-        n1,
-        n2,
-        n3,
-        a,
-        b,
-        rotations_angle=rotations,
-        transitions=transitions,
-        linear_scales=linear_scales)
-
-    theta_test_points = [[0., 0.], [math.pi / 2., 0.],
-                         [math.pi / 2., math.pi / 2.]]
-    batched_theta_test_tensor = torch.tensor(theta_test_points).view(
-        1, 3, dim - 1).repeat(batch, 1, 1)
-    P = len(theta_test_points)
-    batched_radius_tensor = torch.tensor([0.5] * batch * n * P *
-                                         (dim - 1)).view(batch, n, P, dim - 1)
-    points = sampler.transform_circumference_angle_to_super_shape_world_cartesian_coord(
-        batched_theta_test_tensor, batched_radius_tensor, preset_params)
-
-    assert [*points.shape] == [batch, n, P, dim]
-    target_points = torch.tensor([[[0.25, 0., 0.], [0, 0.25, 0], [0., 0.,
-                                                                  0.5]],
-                                  [[1., 0., -0.25], [1, 0.25, 0.],
-                                   [1.5, 0.,
-                                    0.]]]).view(1, n, P,
-                                                dim).repeat(batch, 1, 1, 1)
-    print(points[0])
-    print(target_points[0])
-    assert torch.allclose(points, target_points, atol=EPS)
 
 
 def test_transform_world_cartesian_coord_to_tsd_2d():
@@ -352,25 +327,18 @@ def test_transform_world_cartesian_coord_to_tsd_2d():
         xmin = x.min()
         ymin = y.min()
 
-        width = xmax - xmin
-        height = ymax - ymin
-
-        # Check area
-        assert torch.allclose(width * height,
-                              torch.ones([1]),
-                              atol=area_error_tol)
         # Check corners
         assert torch.allclose(xmax,
-                              torch.tensor([0.5]) + transitions[idx][0],
+                              torch.tensor([1.]) + transitions[idx][0],
                               atol=area_error_tol)
         assert torch.allclose(xmin,
-                              -torch.tensor([0.5]) + transitions[idx][0],
+                              -torch.tensor([1.]) + transitions[idx][0],
                               atol=area_error_tol)
         assert torch.allclose(ymax,
-                              torch.tensor([0.5]) + transitions[idx][1],
+                              torch.tensor([1.]) + transitions[idx][1],
                               atol=area_error_tol)
         assert torch.allclose(ymin,
-                              -torch.tensor([0.5]) + transitions[idx][1],
+                              -torch.tensor([1.]) + transitions[idx][1],
                               atol=area_error_tol)
 
 
@@ -390,46 +358,45 @@ def test_transform_world_cartesian_coord_to_tsd_3d():
     dim = 3
     device = 'cpu'
 
-    # x-y plane, xmin is -0.25, xmax is 1.5, ymin is -0.25, ymax is 0.25
     grid_ranges = [
         {
-            'range': [[-0.3, 1.7], [-0.3, 0.3], [0, 0]],
+            'range': [[-1.2, 2.2], [-1.2, 1.2], [0, 0]],
             'sample_num': [sample_num, sample_num, 1]
         },
         {  # for y-z plane
-            'range': [[0, 0], [-0.3, 0.3], [-0.7, 0.7]],
+            'range': [[0, 0], [-1.2, 1.2], [-1.2, 1.2]],
             'sample_num': [1, sample_num, sample_num]
         }
     ]
     target = [[{
-        'xmin': -0.25,
-        'xmax': 0.25,
-        'ymin': -0.25,
-        'ymax': 0.25,
+        'xmin': -1.0,
+        'xmax': 1.0,
+        'ymin': -1.0,
+        'ymax': 1.0,
         'zmin': 0.,
         'zmax': 0.
     }, {
-        'xmin': 0.5,
-        'xmax': 1.5,
-        'ymin': -0.25,
-        'ymax': 0.25,
+        'xmin': 0.0,
+        'xmax': 2.0,
+        'ymin': -1.0,
+        'ymax': 1.0,
         'zmin': 0.,
         'zmax': 0.
     }],
               [{
                   'xmin': 0.,
                   'xmax': 0.,
-                  'ymin': -0.25,
-                  'ymax': 0.25,
-                  'zmin': -0.5,
-                  'zmax': 0.5
+                  'ymin': -1.0,
+                  'ymax': 1.0,
+                  'zmin': -1.0,
+                  'zmax': 1.0
               }, {
                   'xmin': 0.,
                   'xmax': 0.,
-                  'ymin': -0.25,
-                  'ymax': 0.25,
-                  'zmin': -0.25,
-                  'zmax': 0.25
+                  'ymin': -1.0,
+                  'ymax': 1.0,
+                  'zmin': -1.0,
+                  'zmax': 1.0
               }]]
     rotationss = [[[0., 0., 0.], [0., math.pi / 2, 0.]]] * len(grid_ranges)
     translationss = [[[0., 0., 0.], [1.0, 0., 0.]], [[0., 0., 0.],
@@ -462,6 +429,7 @@ def test_transform_world_cartesian_coord_to_tsd_3d():
                                             batch=batch,
                                             dim=dim,
                                             device=device)
+        print(coord.shape)
         sgn = sampler.transform_world_cartesian_coord_to_tsd(
             coord, preset_params)
 
@@ -505,3 +473,47 @@ def test_transform_world_cartesian_coord_to_tsd_3d():
             assert torch.allclose(zmin,
                                   target_coord['zmin'],
                                   atol=area_error_tol)
+
+
+def test_extract_surface_point_std():
+    batch = 1
+    m = 4
+    n = 2
+    n1 = 1
+    n2 = 1
+    n3 = 1
+    a = 1
+    b = 1
+    dim = 2
+
+    rotations = [[0.], [0.]]
+    transitions = [[0., 0.], [.5, 0.]]
+
+    sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
+    preset_params = utils.generate_multiple_primitive_params(
+        m,
+        n1,
+        n2,
+        n3,
+        a,
+        b,
+        rotations_angle=rotations,
+        transitions=transitions)
+
+    target_points = [[[0., 1.], [1., 0.]], [[0., 0.], [1., 1.]]]
+
+    batched_target_points = torch.tensor(target_points).view(
+        batch, n, len(target_points[0]), dim)
+
+    print(batched_target_points)
+
+    sgn = sampler.extract_surface_point_std(batched_target_points,
+                                            preset_params)
+    sgn_tanhed = nn.functional.tanh(sgn * 100)
+
+    target_sgn = [[[0., 0., 1., -1], [-1., 1., 1., -1.]]]
+
+    batched_target_sgn = torch.tensor(target_sgn).view(
+        batch, n, n * len(target_points[0]))
+
+    assert torch.allclose(batched_target_sgn, sgn_tanhed, atol=1e-4)

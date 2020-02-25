@@ -63,7 +63,8 @@ def rational_supershape(theta, sin, cos, n1, n2, n3, a, b):
         assert not torch.isnan(w).any(), (n2, n3)
         return w
 
-    r = (2.**(-(n1 + EPS))) * (n1 / (W(theta) + EPS) + 1. - n1)
+    #r = (2.**(-(n1 + EPS))) * (n1 / (W(theta) + EPS) + 1. - n1)
+    r = 1. / (n1 * W(theta) + 1. - n1 + EPS)
     assert not torch.isnan(r).any(), n1
     return r
 
@@ -109,12 +110,12 @@ def implicit_rational_supershape(coord, angles, n1, n2, n3, a, b, m_vector):
 
 def supershape(theta, sin, cos, n1, n2, n3, a, b):
     def U(theta):
-        u = a * ((cos).abs()**n2)
+        u = (a * cos).abs()**n2
         assert not torch.isnan(u).any(), (n2, a)
         return u
 
     def V(theta):
-        v = b * ((sin).abs()**n3)
+        v = (b * sin).abs()**n3
         assert not torch.isnan(v).any(), (n3, b)
         return v
 
