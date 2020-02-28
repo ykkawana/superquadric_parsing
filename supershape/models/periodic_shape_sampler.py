@@ -3,7 +3,6 @@ from torch import nn
 from layers import primitive_wise_layers
 from models import super_shape_sampler
 import utils
-from layers import layer_utils
 
 
 class PeriodicShapeSampler(super_shape_sampler.SuperShapeSampler):

@@ -36,7 +36,6 @@ def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_2d(
     sampler = periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ(points_num,
                                                                  m,
                                                                  n,
-                                                                 mode='delta',
                                                                  dim=dim)
     preset_params = utils.generate_multiple_primitive_params(
         m,
@@ -58,7 +57,7 @@ def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_2d(
     batched_points = torch.tensor([0.] * batch * points_num * dim).view(
         batch, points_num, dim)
     margin = 0.5
-    mocker.return_value = margin
+    mocker.return_value = torch.tensor([margin])
     cartesian_coord = sampler.transform_circumference_angle_to_super_shape_world_cartesian_coord(
         thetas, radius, preset_params, points=batched_points)
 
@@ -74,7 +73,9 @@ def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_2d(
 
     print(cartesian_coord[0])
     print(target_cartesian_coord)
-    assert torch.allclose(cartesian_coord[0], target_cartesian_coord, atol=EPS)
+    assert torch.allclose(cartesian_coord[0], target_cartesian_coord,
+                          atol=EPS), (cartesian_coord[0],
+                                      target_cartesian_coord)
 
 
 @mock.patch(
@@ -102,7 +103,6 @@ def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_3d(
     sampler = periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ(points_num,
                                                                  m,
                                                                  n,
-                                                                 mode='delta',
                                                                  dim=dim,
                                                                  rational=True)
     preset_params = utils.generate_multiple_primitive_params(
@@ -117,7 +117,7 @@ def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_3d(
         linear_scales=linear_scales)
 
     thetas_list = [[math.pi / 2., 0.], [0., 0.], [math.pi / 4., 0.],
-                   [math.pi, 0.], [math.pi / 2., math.pi / 2.]]
+                   [math.pi, 0.], [math.pi / 2., math.pi / 2. - EPS]]
     P = len(thetas_list)
     thetas = torch.tensor(thetas_list).view(1, P, dim - 1).repeat(batch, 1, 1)
 
@@ -127,15 +127,17 @@ def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_3d(
     batched_points = torch.tensor([1.] * batch * points_num * dim).view(
         batch, points_num, dim)
     margin = 0.5
-    mocker.return_value = margin
+    mocker.return_value = torch.tensor([margin])
     cartesian_coord = sampler.transform_circumference_angle_to_super_shape_world_cartesian_coord(
         thetas, radius, preset_params, points=batched_points)
 
     assert [*cartesian_coord.shape] == [batch, n, P, dim]
     target_cartesian_coord_n1 = torch.tensor(
         [[0., 1. + margin, 0.], [1. + margin, 0., 0.],
-         [0.5 + math.sqrt(margin**2 / 2), 0.5 + math.sqrt(margin**2 / 2), 0.],
-         [-1. - margin, 0., 0.], [0., 0., 1. + margin]]).view(1, P, dim)
+         [
+             0.5 + math.sqrt(margin**2 / 2**2),
+             0.5 + math.sqrt(margin**2 / 2**2), 0.
+         ], [-1. - margin, 0., 0.], [0., 0., 1. + margin]]).view(1, P, dim)
     target_cartesian_coord_n2 = target_cartesian_coord_n1.clone()
     target_cartesian_coord_n2[..., 0] += 1
     target_cartesian_coord = torch.cat(
@@ -148,7 +150,10 @@ def test_transform_circumference_angle_to_super_shape_world_cartesian_coord_3d(
                           atol=EPS * 1e+1)
 
 
-def test_transform_world_cartesian_coord_to_tsd_2d():
+@mock.patch(
+    'models.periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ.get_periodic_net_r'
+)
+def test_transform_world_cartesian_coord_to_tsd_2d(mocker):
     """Test if area with positive signs is as expected size for all primitives 
     and each corner of shape (square) is as expected. 
     """
@@ -162,7 +167,7 @@ def test_transform_world_cartesian_coord_to_tsd_2d():
     b = 1
     theta = math.pi / 2.
     sample_num = 200
-    grid_range = [-1, 1.5]
+    grid_range = [-2, 2]
     area_error_tol = 1e-1
     dim = 2
     points_num = 5
@@ -170,19 +175,10 @@ def test_transform_world_cartesian_coord_to_tsd_2d():
     rotations = [[0.], [math.pi / 2]]
     transitions = [[0., 0.], [0.5, 0.]]
 
-    sampler = periodic_shape_sampler.PeriodicShapeSampler(points_num,
-                                                          m,
-                                                          n,
-                                                          mode='delta',
-                                                          dim=dim)
-    mock_decoder = type(
-        '', (nn.Module, ), {
-            'forward':
-            lambda self, x: torch.tensor([0.]).view(1, 1, 1, 1).repeat(
-                batch, sample_num**dim, n, dim - 1)
-        })()
-    sampler.decoders = [mock_decoder] * (dim - 1)
-
+    sampler = periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ(points_num,
+                                                                 m,
+                                                                 n,
+                                                                 dim=dim)
     preset_params = utils.generate_multiple_primitive_params(
         m,
         n1,
@@ -202,6 +198,9 @@ def test_transform_world_cartesian_coord_to_tsd_2d():
 
     batched_points = torch.tensor([0.] * batch * points_num * dim).view(
         batch, points_num, dim)
+
+    margin = torch.zeros([1]).float() + 0.2
+    mocker.return_value = margin
     sgn = sampler.transform_world_cartesian_coord_to_tsd(coord,
                                                          preset_params,
                                                          points=batched_points)
@@ -218,29 +217,29 @@ def test_transform_world_cartesian_coord_to_tsd_2d():
         xmin = x.min()
         ymin = y.min()
 
-        width = xmax - xmin
-        height = ymax - ymin
-
-        # Check area
-        assert torch.allclose(width * height,
-                              torch.ones([1]),
-                              atol=area_error_tol)
         # Check corners
         assert torch.allclose(xmax,
-                              torch.tensor([0.5]) + transitions[idx][0],
+                              torch.tensor([1.]) + transitions[idx][0] +
+                              margin,
                               atol=area_error_tol)
         assert torch.allclose(xmin,
-                              -torch.tensor([0.5]) + transitions[idx][0],
+                              -torch.tensor([1.]) + transitions[idx][0] -
+                              margin,
                               atol=area_error_tol)
         assert torch.allclose(ymax,
-                              torch.tensor([0.5]) + transitions[idx][1],
+                              torch.tensor([1.]) + transitions[idx][1] +
+                              margin,
                               atol=area_error_tol)
         assert torch.allclose(ymin,
-                              -torch.tensor([0.5]) + transitions[idx][1],
+                              -torch.tensor([1.]) + transitions[idx][1] -
+                              margin,
                               atol=area_error_tol)
 
 
-def test_transform_world_cartesian_coord_to_tsd_3d():
+@mock.patch(
+    'models.periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ.get_periodic_net_r'
+)
+def test_transform_world_cartesian_coord_to_tsd_3d(mocker):
     batch = 3
     m = 4
     n = 2
@@ -257,46 +256,46 @@ def test_transform_world_cartesian_coord_to_tsd_3d():
     dim = 3
     device = 'cpu'
 
-    # x-y plane, xmin is -0.25, xmax is 1.5, ymin is -0.25, ymax is 0.25
+    margin = 0.15
     grid_ranges = [
         {
-            'range': [[-0.3, 1.7], [-0.3, 0.3], [0, 0]],
+            'range': [[-1.2, 2.2], [-1.2, 1.2], [0, 0]],
             'sample_num': [sample_num, sample_num, 1]
         },
         {  # for y-z plane
-            'range': [[0, 0], [-0.3, 0.3], [-0.7, 0.7]],
+            'range': [[0, 0], [-1.2, 1.2], [-1.2, 1.2]],
             'sample_num': [1, sample_num, sample_num]
         }
     ]
     target = [[{
-        'xmin': -0.25,
-        'xmax': 0.25,
-        'ymin': -0.25,
-        'ymax': 0.25,
+        'xmin': -1.0 - margin,
+        'xmax': 1.0 + margin,
+        'ymin': -1.0 - margin,
+        'ymax': 1.0 + margin,
         'zmin': 0.,
         'zmax': 0.
     }, {
-        'xmin': 0.5,
-        'xmax': 1.5,
-        'ymin': -0.25,
-        'ymax': 0.25,
+        'xmin': 0.0 - margin,
+        'xmax': 2.0 + margin,
+        'ymin': -1.0 - margin,
+        'ymax': 1.0 + margin,
         'zmin': 0.,
         'zmax': 0.
     }],
               [{
                   'xmin': 0.,
                   'xmax': 0.,
-                  'ymin': -0.25,
-                  'ymax': 0.25,
-                  'zmin': -0.5,
-                  'zmax': 0.5
+                  'ymin': -1.0 - margin,
+                  'ymax': 1.0 + margin,
+                  'zmin': -1.0 - margin,
+                  'zmax': 1.0 + margin,
               }, {
                   'xmin': 0.,
                   'xmax': 0.,
-                  'ymin': -0.25,
-                  'ymax': 0.25,
-                  'zmin': -0.25,
-                  'zmax': 0.25
+                  'ymin': -1.0 - margin,
+                  'ymax': 1.0 + margin,
+                  'zmin': -1.0 - margin,
+                  'zmax': 1.0 + margin
               }]]
     rotationss = [[[0., 0., 0.], [0., math.pi / 2, 0.]]] * len(grid_ranges)
     translationss = [[[0., 0., 0.], [1.0, 0., 0.]], [[0., 0., 0.],
@@ -307,19 +306,8 @@ def test_transform_world_cartesian_coord_to_tsd_3d():
         transitions = translationss[idx]
         linear_scales = linear_scaless[idx]
 
-        sampler = periodic_shape_sampler.PeriodicShapeSampler(points_num,
-                                                              m,
-                                                              n,
-                                                              mode='delta',
-                                                              dim=dim)
-        mock_decoder = type(
-            '', (nn.Module, ), {
-                'forward':
-                lambda self, x: torch.tensor([0.]).view(1, 1, 1, 1).repeat(
-                    batch, sample_num**(dim - 1), n, 1)
-            })()
-        sampler.decoders = [mock_decoder] * (dim - 1)
-
+        sampler = periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ(
+            points_num, m, n, dim=dim)
         sampler.to(device)
         preset_params = utils.generate_multiple_primitive_params(
             m,
@@ -341,8 +329,9 @@ def test_transform_world_cartesian_coord_to_tsd_3d():
                                             batch=batch,
                                             dim=dim,
                                             device=device)
-        batched_points = torch.tensor([0.] * batch * points_num * dim).view(
-            batch, points_num, dim)
+
+        batched_points = torch.zeros([batch, points_num, dim]).float()
+        mocker.return_value = torch.zeros([1]).float() + margin
         sgn = sampler.transform_world_cartesian_coord_to_tsd(
             coord, preset_params, points=batched_points)
 
@@ -386,3 +375,251 @@ def test_transform_world_cartesian_coord_to_tsd_3d():
             assert torch.allclose(zmin,
                                   target_coord['zmin'],
                                   atol=area_error_tol)
+
+
+def test_forward_3d():
+    batch = 2
+    m = 4
+    n = 5
+    n1 = 1
+    n2 = 1
+    n3 = 1
+    a = 1
+    b = 1
+    dim = 3
+    points_num = 2
+
+    rotations = [[0., 0., 0.]] * n
+    transitions = [[0., 0., 0.]] * n
+    linear_scales = [[1., 1., 1.]] * n
+
+    sampler = periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ(points_num,
+                                                                 m,
+                                                                 n,
+                                                                 dim=dim)
+    preset_params = utils.generate_multiple_primitive_params(
+        m,
+        n1,
+        n2,
+        n3,
+        a,
+        b,
+        rotations_angle=rotations,
+        transitions=transitions,
+        linear_scales=linear_scales)
+
+    grid_range = {
+        'range': [[-math.pi, math.pi], [-math.pi / 2, math.pi / 2]],
+        'sample_num': [5, 5]
+    }
+    batched_theta_test_tensor = utils.generate_grid_samples(grid_range,
+                                                            batch=batch,
+                                                            dim=dim - 1)
+
+    coord_grid_range = 5
+    batched_coord_test_tensor = utils.generate_grid_samples(coord_grid_range,
+                                                            batch=batch,
+                                                            dim=dim)
+
+    batched_points = torch.zeros([batch, points_num, dim]).float()
+    sampler.forward(preset_params,
+                    points=batched_points,
+                    coord=batched_coord_test_tensor,
+                    thetas=batched_theta_test_tensor)
+
+
+def test_forward_2d():
+    batch = 2
+    m = 4
+    n = 5
+    n1 = 1
+    n2 = 1
+    n3 = 1
+    a = 1
+    b = 1
+    dim = 2
+    points_num = 2
+
+    rotations = [[0.]] * n
+    transitions = [[0., 0.]] * n
+    linear_scales = [[1., 1.]] * n
+
+    sampler = periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ(points_num,
+                                                                 m,
+                                                                 n,
+                                                                 dim=dim)
+    preset_params = utils.generate_multiple_primitive_params(
+        m,
+        n1,
+        n2,
+        n3,
+        a,
+        b,
+        rotations_angle=rotations,
+        transitions=transitions,
+        linear_scales=linear_scales)
+
+    grid_range = {
+        'range': [[-math.pi, math.pi], [-math.pi / 2, math.pi / 2]],
+        'sample_num': [5, 5]
+    }
+    batched_theta_test_tensor = utils.generate_grid_samples(
+        grid_range, batch=batch, dim=dim)[:, :, 0].unsqueeze(-1)
+
+    coord_grid_range = 5
+    batched_coord_test_tensor = utils.generate_grid_samples(coord_grid_range,
+                                                            batch=batch,
+                                                            dim=dim)
+
+    batched_points = torch.zeros([batch, points_num, dim]).float()
+    sampler.forward(preset_params,
+                    points=batched_points,
+                    coord=batched_coord_test_tensor,
+                    thetas=batched_theta_test_tensor)
+
+
+def test_transform_world_cartesian_coord_to_tsd_2d_with_periodic_net():
+    batch = 3
+    m = 3
+    n = 1
+    n1 = 1
+    n2 = 10
+    n3 = 3
+    a = 1
+    b = 1
+    theta = math.pi / 2.
+    sample_num = 200
+    points_num = 5
+
+    dim = 2
+
+    rotations = [[0.]]
+    transitions = [[0., 0.]]
+    linear_scales = [[1., 1.]]
+
+    sampler = periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ(points_num,
+                                                                 m,
+                                                                 n,
+                                                                 last_scale=.1,
+                                                                 dim=dim)
+
+    preset_params = utils.generate_multiple_primitive_params(
+        m,
+        n1,
+        n2,
+        n3,
+        a,
+        b,
+        rotations_angle=rotations,
+        transitions=transitions,
+        linear_scales=linear_scales,
+        nn=n)
+
+    batched_theta_test_tensor = utils.sample_spherical_angles(
+        sample_num=sample_num, batch=batch, dim=dim)
+    batched_points = torch.zeros([batch, points_num, dim]).float()
+
+    # B, N, P
+    radius = sampler.transform_circumference_angle_to_super_shape_radius(
+        batched_theta_test_tensor, preset_params, points=batched_points)
+    # B, P, dim
+    coord = sampler.transform_circumference_angle_to_super_shape_world_cartesian_coord(
+        batched_theta_test_tensor,
+        radius,
+        preset_params,
+        points=batched_points).view(batch, -1, dim)
+
+    sgn = sampler.transform_world_cartesian_coord_to_tsd(coord,
+                                                         preset_params,
+                                                         points=batched_points)
+
+    assert torch.allclose(sgn, torch.zeros_like(sgn),
+                          atol=1e-5), (sgn.min(), sgn.max())
+
+
+def test_transform_world_cartesian_coord_to_tsd_3d_with_periodic_net():
+    batch = 3
+    m = 3
+    n = 1
+    n1 = 1
+    n2 = 10
+    n3 = 3
+    a = 1
+    b = 1
+    theta = math.pi / 2.
+    sample_num = 200
+    points_num = 5
+    P = 10
+
+    dim = 3
+
+    rotations = [[0., 0., 0.]]
+    transitions = [[0., 0., 0.]]
+    linear_scales = [[1., 1., 1.]]
+
+    sampler = periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ(points_num,
+                                                                 m,
+                                                                 n,
+                                                                 last_scale=.1,
+                                                                 dim=dim)
+    preset_params = utils.generate_multiple_primitive_params(
+        m,
+        n1,
+        n2,
+        n3,
+        a,
+        b,
+        rotations_angle=rotations,
+        transitions=transitions,
+        linear_scales=linear_scales,
+        nn=n)
+
+    batched_theta_test_tensor = utils.sample_spherical_angles(
+        sample_num=P, batch=batch, sgn_convertible=True, dim=dim)
+
+    batched_points = torch.ones([batch, points_num, dim]).float()
+
+    # B, N, P
+    radius = sampler.transform_circumference_angle_to_super_shape_radius(
+        batched_theta_test_tensor, preset_params, points=batched_points)
+    # B, P, dim
+    coord = sampler.transform_circumference_angle_to_super_shape_world_cartesian_coord(
+        batched_theta_test_tensor,
+        radius,
+        preset_params,
+        points=batched_points).view(batch, -1, dim)
+
+    sgn = sampler.transform_world_cartesian_coord_to_tsd(coord,
+                                                         preset_params,
+                                                         points=batched_points)
+    assert torch.allclose(sgn, torch.zeros_like(sgn),
+                          atol=1e-5), (sgn.min(), sgn.max())
+
+
+def test_encoder_decoder():
+    batch = 3
+    m = 3
+    n = 1
+    dim = 3
+    points_num = 7
+    angles_num = 5
+
+    sampler = periodic_shape_sampler_xyz.PeriodicShapeSamplerXYZ(points_num,
+                                                                 m,
+                                                                 n,
+                                                                 last_scale=1.,
+                                                                 dim=dim)
+
+    x = torch.zeros([batch, points_num, dim]).float()
+    for N in [1, n]:
+        # B, feature_dim
+        encoded = sampler.encoder(x).view(batch, 1, 1,
+                                          -1).repeat(1, angles_num, n, 1)
+        sincos = torch.zeros([batch, angles_num, n, (dim - 1) * 2]).float()
+        radius_transposed_repeated = torch.zeros([batch, angles_num, n,
+                                                  1]).float()
+        encoded_sincos = torch.cat(
+            [encoded, sincos, radius_transposed_repeated], axis=-1)
+        decoded = sampler.decoder(encoded_sincos)
+
+        assert [*decoded.shape] == [batch, angles_num, n, 1]

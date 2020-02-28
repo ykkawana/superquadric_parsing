@@ -9,7 +9,7 @@ EPS = 1e-7
 def apply_rotation(coord, rotation, inv=False):
     B, N, P, dim = coord.shape
     _, N2, dim2 = rotation.shape
-    assert N == N2
+    assert N == N2, (N, N2)
     if dim == 2:
         assert dim2 == 1
         return apply_2d_rotation(coord, rotation, inv=inv)
@@ -98,3 +98,7 @@ def get_2d_rotation_matrix(rotation, inv=False):
     rotation_matrix = torch.stack(
         [upper_rotation_matrix, lower_rotation_matrix], axis=-2)
     return rotation_matrix
+
+
+def convert_tsd_range_to_zero_to_one(tsd, scale=100):
+    return nn.functional.relu(nn.functional.sigmoid(tsd * scale))

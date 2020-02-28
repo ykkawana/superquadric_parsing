@@ -194,34 +194,6 @@ def test_transform_circumference_angle_to_super_shape_radius_2d():
     assert torch.allclose(
         target_radius.view(1, 1, P, 1).repeat(batch, n, 1, dim - 1), radius)
 
-    # Test in more complicated shape
-    m = 6
-    n1 = 3
-    n2 = 10
-    n3 = 5
-
-    (theta_test_tensor, m_tensor, n1inv_tensor, n2_tensor, n3_tensor,
-     ainv_tensor,
-     binv_tensor) = utils.get_single_input_element(theta, m, n1, n2, n3, a, b)
-
-    batched_theta_test_tensor = theta_test_tensor.repeat(batch).view(
-        batch, 1, 1).repeat(1, P, dim - 1)
-
-    target_radius = super_shape_functions.rational_supershape_by_m(
-        batched_theta_test_tensor, m_tensor, n1inv_tensor, n2_tensor,
-        n3_tensor, ainv_tensor, binv_tensor)
-
-    sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
-    preset_params = utils.generate_multiple_primitive_params(
-        m, n1, n2, n3, a, b)
-    radius = sampler.transform_circumference_angle_to_super_shape_radius(
-        batched_theta_test_tensor, preset_params)
-
-    assert torch.all(
-        torch.eq(
-            target_radius.view(batch, 1, P, 1).repeat(1, n, 1, dim - 1),
-            radius))
-
 
 def test_transform_circumference_angle_to_super_shape_radius_3d():
     # If m = 4 and all other params is 1 except n, then the shape is square.
@@ -517,3 +489,148 @@ def test_extract_surface_point_std():
         batch, n, n * len(target_points[0]))
 
     assert torch.allclose(batched_target_sgn, sgn_tanhed, atol=1e-4)
+
+
+def test_forward():
+    batch = 1
+    m = 4
+    n = 5
+    n1 = 1
+    n2 = 1
+    n3 = 1
+    a = 1
+    b = 1
+    dim = 3
+
+    rotations = [[0., 0., 0.]] * n
+    transitions = [[0., 0., 0.]] * n
+    linear_scales = [[1., 1., 1.]] * n
+
+    sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
+    preset_params = utils.generate_multiple_primitive_params(
+        m,
+        n1,
+        n2,
+        n3,
+        a,
+        b,
+        rotations_angle=rotations,
+        transitions=transitions,
+        linear_scales=linear_scales)
+
+    grid_range = {
+        'range': [[-math.pi, math.pi], [-math.pi / 2, math.pi / 2]],
+        'sample_num': [5, 5]
+    }
+    batched_theta_test_tensor = utils.generate_grid_samples(grid_range,
+                                                            batch=batch,
+                                                            dim=dim - 1)
+
+    point_grid_range = 5
+    batched_points_test_tensor = utils.generate_grid_samples(point_grid_range,
+                                                             batch=batch,
+                                                             dim=dim)
+
+    sampler.forward(preset_params,
+                    coord=batched_points_test_tensor,
+                    thetas=batched_theta_test_tensor)
+
+
+def test_transform_world_cartesian_coord_to_tsd_2d_with_random_points():
+    batch = 3
+    m = 3
+    n = 1
+    n1 = 1
+    n2 = 10
+    n3 = 3
+    a = 1
+    b = 1
+    theta = math.pi / 2.
+    sample_num = 200
+
+    dim = 2
+
+    rotations = [[0.]]
+    transitions = [[0., 0.]]
+    linear_scales = [[1., 1.]]
+
+    sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
+    preset_params = utils.generate_multiple_primitive_params(
+        m,
+        n1,
+        n2,
+        n3,
+        a,
+        b,
+        rotations_angle=rotations,
+        transitions=transitions,
+        linear_scales=linear_scales,
+        nn=n)
+    """
+    thetas_list = [math.pi / 2., 0., math.pi / 4.]
+    P = len(thetas_list)
+    batched_theta_test_tensor = torch.tensor(thetas_list).view(1, P,
+                                                               dim - 1).repeat(
+                                                                   batch, 1, 1)
+    """
+
+    batched_theta_test_tensor = utils.sample_spherical_angles(
+        sample_num=sample_num, batch=batch, dim=dim)
+    # B, N, P
+    radius = sampler.transform_circumference_angle_to_super_shape_radius(
+        batched_theta_test_tensor, preset_params)
+    # B, P, dim
+    coord = sampler.transform_circumference_angle_to_super_shape_world_cartesian_coord(
+        batched_theta_test_tensor, radius, preset_params).view(batch, -1, dim)
+
+    sgn = sampler.transform_world_cartesian_coord_to_tsd(coord, preset_params)
+    assert torch.allclose(sgn, torch.zeros_like(sgn),
+                          atol=1e-5), (sgn.min(), sgn.max())
+
+
+def test_transform_world_cartesian_coord_to_tsd_3d_with_random_points():
+    batch = 3
+    m = 3
+    n = 1
+    n1 = 1
+    n2 = 10
+    n3 = 3
+    a = 1
+    b = 1
+    theta = math.pi / 2.
+    sample_num = 200
+    points_num = 5
+    P = 10
+
+    dim = 3
+
+    rotations = [[0., 0., 0.]]
+    transitions = [[0., 0., 0.]]
+    linear_scales = [[1., 1., 1.]]
+
+    sampler = super_shape_sampler.SuperShapeSampler(m, n, dim=dim)
+    preset_params = utils.generate_multiple_primitive_params(
+        m,
+        n1,
+        n2,
+        n3,
+        a,
+        b,
+        rotations_angle=rotations,
+        transitions=transitions,
+        linear_scales=linear_scales,
+        nn=n)
+
+    batched_theta_test_tensor = utils.sample_spherical_angles(
+        batch=batch, sgn_convertible=True, dim=dim)
+
+    # B, N, P
+    radius = sampler.transform_circumference_angle_to_super_shape_radius(
+        batched_theta_test_tensor, preset_params)
+    # B, P, dim
+    coord = sampler.transform_circumference_angle_to_super_shape_world_cartesian_coord(
+        batched_theta_test_tensor, radius, preset_params).view(batch, -1, dim)
+
+    sgn = sampler.transform_world_cartesian_coord_to_tsd(coord, preset_params)
+    assert torch.allclose(sgn, torch.zeros_like(sgn),
+                          atol=1e-5), (sgn.max(), sgn.min())

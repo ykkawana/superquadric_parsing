@@ -3,7 +3,9 @@ from torch import nn
 from layers import super_shape_functions
 from models import model_utils
 import utils
-from layers import layer_utils
+import math
+
+EPS = 1e-7
 
 
 class BaseShapeSampler(nn.Module):
@@ -173,7 +175,7 @@ class BaseShapeSampler(nn.Module):
                                          D).repeat(1, self.n_primitives, 1, 1)
 
         sgn = self.get_sgn(coord_dim_added, params, *args, **kwargs)
-        assert [*sgn.shape] == [B, self.n_primitives, P]
+        assert [*sgn.shape] == [B, self.n_primitives, P], sgn.shape
         return sgn
 
     def get_sgn(self, coord, params, *args, **kwargs):
@@ -185,8 +187,30 @@ class BaseShapeSampler(nn.Module):
         y = coord[..., 1]
         z = torch.zeros([1], device=coord.device) if dim == 2 else coord[...,
                                                                          2]
-        indicator = layer_utils.get_indicator(x, y, z, r1, r2, phi)
+        indicator = self.get_indicator(x, y, z, r1, r2, theta, phi, *args,
+                                       **kwargs)
         assert not torch.isnan(indicator).any(), indicator
+        return indicator
+
+    def get_indicator(self, x, y, z, r1, r2, theta, phi, *args, **kwargs):
+        """get istropic indicator values.
+
+        Args:
+            x: x in cartesian coordinate.
+            y: y in cartesian coordinate.
+            r1: radius in polar coordinate.
+            r2: radius in polar coordinate. Defaults to 1.
+            z: z in cartesian coordinate. Defaulst to 0.
+            theta: polar coordinate of r1
+            phi: polar coordinate of r2
+
+        Returns:
+            indicator: indicator value. Positive in inside, negative in outside.
+        """
+        numerator = (x**2. + y**2. + z**2.)
+        denominator = ((phi.cos()**2.) * (r1**2. - 1) + 1 + EPS)
+        indicator = 1. - (1. /
+                          (r2 + EPS)) * (numerator / denominator + EPS).sqrt()
         return indicator
 
     def cartesian2polar(self, coord, params, *args, **kwargs):
@@ -199,16 +223,19 @@ class BaseShapeSampler(nn.Module):
         y = coord[..., 1]
         z = torch.zeros([1], device=coord.device) if dim == 2 else coord[...,
                                                                          2]
-        theta = utils.safe_atan(y, x)
+        x_non_zero = torch.where(x == 0, EPS + x, x)
+        theta = torch.atan2(y, x_non_zero)
+
         assert not torch.isnan(theta).any(), (theta)
         r1 = self.get_r_check_shape(theta.view(B, self.n_primitives, P, 1),
                                     params, *args, **kwargs)[..., 0]
 
-        phi = utils.safe_atan(z * r1 * x.cos(), x)
+        phi = torch.atan(z * r1 * theta.cos() / x_non_zero)
+
         assert not torch.isnan(phi).any(), (phi)
-        r2 = torch.ones([1, 1, 1], device=phi.device) if dim == 2 else (
-            self.get_r_check_shape(phi.view(B, self.n_primitives, P, 1),
-                                   params, *args, **kwargs))[..., 1]
+        r2 = torch.ones_like(r1) if dim == 2 else (self.get_r_check_shape(
+            phi.view(B, self.n_primitives, P, 1), params, *args, **
+            kwargs))[..., 1]
 
         # (B, N, P)
         return r1, r2, theta, phi

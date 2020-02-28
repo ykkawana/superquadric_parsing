@@ -10,14 +10,14 @@ EPS = 1e-7
 
 def safe_atan(y, x):
     theta = torch.atan2(y, x)
-    theta = torch.where(theta >= 0, theta, (2 * math.pi + theta))
+    #theta = torch.atan(y / (x + EPS * 1e-3))
+    #theta = torch.where(theta >= 0, theta, (2 * math.pi + theta))
     return theta
 
 
 def sphere_polar2cartesian(radius, angles):
     assert len(radius.shape) == len(angles.shape)
     assert radius.shape[-1] == 1
-    B, N, P, D = radius.shape
     theta = angles[..., 0]
     phi = torch.zeros(
         [1], device=theta.device) if angles.shape[-1] == 1 else angles[..., 1]
@@ -31,16 +31,20 @@ def sphere_polar2cartesian(radius, angles):
     return torch.stack(coord, axis=-1)
 
 
+"""
+
 def sphere_cartesian2polar(coord):
     r = ((coord**2).sum(-1) + EPS).sqrt().unsqueeze(-1)
-    theta = safe_atan(coord[..., 1], coord[..., 0]).unsqueeze(-1)
+    theta = torch.atan2(coord[..., 1], coord[..., 0]).unsqueeze(-1)
     angles = [theta]
     if coord.shape[-1] == 3:
-        phi = safe_atan(coord[..., 2].unsqueeze(-1) * r * theta.sin(),
-                        coord[..., 1].unsqueeze(-1))
+        phi = torch.atan(coord[..., 2].unsqueeze(-1) * r * theta.sin() /
+                         (coord[..., 1].unsqueeze(-1) + EPS))
         angles.append(phi)
     angles = torch.cat(angles, axis=-1)
     return r, angles
+
+"""
 
 
 def supershape_angles(radius, coord, angles):
@@ -73,17 +77,18 @@ def generate_grid_samples(grid_size,
         sampling (str): sample gridwise if it's `grid`, sample by uniform dist. if it's `uniform`.
         sample_num (int): number of samples. If grid_type is dict, this argument will be ignored.
         device: if set, data will be initialized on that device. otherwise will be stored on `cpu`.
-        dim: 2 or 3
+        dim: dimension of meshgrid. Defaults to 2.
     Returns:
         coord (B, sample size, dim)
     """
-    assert dim in [2, 3]
     if isinstance(grid_size, list):
         sampling_start, sampling_end = grid_size
     elif isinstance(grid_size, int):
         sampling_start, sampling_end = -grid_size, grid_size
     else:
-        warnings.warn('sample_num will be ignored')
+        dim = len(grid_size['range'])
+        assert dim == len(grid_size['sample_num'])
+        warnings.warn('sample_num and dim will be ignored')
 
     def contiguous_batch(s):
         return s.contiguous().view(1, -1).repeat(batch, 1)
@@ -109,6 +114,39 @@ def generate_grid_samples(grid_size,
 
     coord_list = [contiguous_batch(s) for s in torch.meshgrid(ranges)]
     return torch.stack(coord_list, axis=-1)
+
+
+def sample_spherical_angles(batch=1,
+                            sampling='grid',
+                            sample_num=100,
+                            device='cpu',
+                            sgn_convertible=False,
+                            dim=2):
+    assert dim in [2, 3]
+    if sgn_convertible:
+        margin = EPS
+    else:
+        margin = 0
+    grid_range = {'range': [[-math.pi, math.pi]], 'sample_num': [sample_num]}
+    if dim == 2:
+        grid_range = {
+            'range': [[-math.pi, math.pi]],
+            'sample_num': [sample_num]
+        }
+        #grid_range = {'range': [[0., 2 * math.pi]], 'sample_num': [sample_num]}
+    else:
+        grid_range = {
+            'range': [[-math.pi, math.pi],
+                      [-math.pi / 2 + margin, math.pi / 2 - margin]],
+            'sample_num': [sample_num, sample_num]
+        }
+
+    angles = generate_grid_samples(grid_range,
+                                   sampling=sampling,
+                                   device=device,
+                                   batch=batch,
+                                   dim=dim - 1)
+    return angles
 
 
 def get_single_input_element(theta, m, n1, n2, n3, a, b):

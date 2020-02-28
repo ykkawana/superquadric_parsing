@@ -4,7 +4,6 @@ from layers import super_shape_functions
 from models import base_shape_sampler
 from models import model_utils
 import utils
-from layers import layer_utils
 
 
 class SuperShapeSampler(base_shape_sampler.BaseShapeSampler):
